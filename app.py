@@ -119,9 +119,9 @@ def get_meets_list() -> Dict[str, str]:
         except Exception:
             pass
 
-    # Exakt 3 zukünftige und 10 vergangene laden
+    # EXACT 3 zukünftige und 5 vergangene, damit wir unter dem 10-Optionen-Limit von Streamlit bleiben!
     fetch_events_from_url("https://myresults.eu/de-AT/Meets/Today-Upcoming", "🟢", 3)
-    fetch_events_from_url("https://myresults.eu/de-AT/Meets/Recent", "🗓️", 10)
+    fetch_events_from_url("https://myresults.eu/de-AT/Meets/Recent", "🗓️", 5)
         
     return meets
 
@@ -216,19 +216,9 @@ try:
 except Exception:
     img_html = ''
 
-# --- NEUER CSS HACK: Durchlässiges Eingabefeld ---
-# Das Feld bleibt in voller Breite bestehen, ist aber für Touch-Eingaben "durchlässig".
-# Der Klick geht direkt an den Button darunter -> Volle Klickfläche, keine Tastatur!
+# Fester HTML-Container: Zwingt Titel und Logo auf einer Zeile nebeneinander
 st.markdown(
     f"""
-    <style>
-        @media (max-width: 768px) {{
-            div[data-testid="stSelectbox"] input {{
-                pointer-events: none !important;
-                user-select: none !important;
-            }}
-        }}
-    </style>
     <div style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; margin-bottom: 15px; gap: 10px;">
         <div style="flex: 1;">
             <h1 style="margin: 0; padding: 0; line-height: 1.1; font-size: 2.2rem; font-weight: 700;">
