@@ -80,57 +80,44 @@ def calculate_points(time_str: str, discipline: str, gender: str, pool_length: s
 # ==============================================================================
 @st.cache_data(show_spinner=False, ttl=1800)
 def get_meets_list() -> Dict[str, str]:
-    """Lädt die 3 nächsten und 10 letzten Wettkämpfe für das Dropdown."""
+    """Sucht absolut robust nach den aktuellsten Wettkämpfen auf der Startseite."""
     meets = {}
-    
-    # 1. Kommende & Aktuelle Wettkämpfe (Maximal 3)
     try:
-        resp = requests.get("https://myresults.eu/de-AT/Meets/Today-Upcoming", headers=HTTP_HEADERS, timeout=5)
+        resp = requests.get("https://myresults.eu/de-AT", headers=HTTP_HEADERS, timeout=10)
         soup = BeautifulSoup(resp.text, 'html.parser')
-        count = 0
-        for link in soup.find_all('a', href=re.compile(r'/Meets/[a-zA-Z-]+/(\d+)')):
-            match = re.search(r'/(\d+)/?$', link.get('href', ''))
+        
+        # Alle Links durchsuchen, die eine typische myresults ID enthalten
+        for a_tag in soup.find_all('a', href=re.compile(r'/Meets/[^/]+/(\d+)')):
+            href = a_tag.get('href', '')
+            match = re.search(r'/Meets/[^/]+/(\d+)', href)
+            
             if match:
                 meet_id = match.group(1)
-                name = link.get_text(strip=True)
-                # Buttons wie "Info" herausfiltern
-                if name and name.lower() not in ["info", "ergebnisse", "meldungen", "live"]:
-                    row = link.find_parent('tr')
-                    datum = row.find('td').get_text(strip=True) if row and row.find('td') else ""
-                    
-                    display_name = f"🟢 {datum} | {name[:45]}..." if len(name) > 45 else f"🟢 {datum} | {name}"
-                    if display_name not in meets:
-                        meets[display_name] = meet_id
-                        count += 1
-                        if count >= 3:
-                            break
-    except Exception:
-        pass
-
-    # 2. Vergangene Wettkämpfe (Maximal 10)
-    try:
-        resp = requests.get("https://myresults.eu/de-AT/Meets/Recent", headers=HTTP_HEADERS, timeout=5)
-        soup = BeautifulSoup(resp.text, 'html.parser')
-        count = 0
-        for link in soup.find_all('a', href=re.compile(r'/Meets/[a-zA-Z-]+/(\d+)')):
-            match = re.search(r'/(\d+)/?$', link.get('href', ''))
-            if match:
-                meet_id = match.group(1)
-                # Überspringen, falls der Wettkampf schon in den "Aktuellen" ist
-                if meet_id in meets.values():
+                name = a_tag.get_text(strip=True)
+                
+                # Überspringe kleine Buttons oder Menüpunkte
+                if not name or name.lower() in ["info", "ergebnisse", "meldungen", "live", "overview", "details"]:
                     continue
                     
-                name = link.get_text(strip=True)
-                if name and name.lower() not in ["info", "ergebnisse", "meldungen", "live"]:
-                    row = link.find_parent('tr')
-                    datum = row.find('td').get_text(strip=True) if row and row.find('td') else ""
-                    
-                    display_name = f"🗓️ {datum} | {name[:45]}..." if len(name) > 45 else f"🗓️ {datum} | {name}"
-                    if display_name not in meets:
-                        meets[display_name] = meet_id
-                        count += 1
-                        if count >= 10:
-                            break
+                # Versuche das Datum aus der Tabelle zu ziehen
+                datum = "🗓️"
+                parent_tr = a_tag.find_parent('tr')
+                if parent_tr:
+                    tds = parent_tr.find_all('td')
+                    if len(tds) > 0:
+                        datum_text = tds[0].get_text(strip=True)
+                        if re.match(r'^\d{2}\.\d{2}\.', datum_text):
+                            datum = f"🗓️ {datum_text}"
+                            
+                display_name = f"{datum} | {name[:50]}"
+                
+                # Vermeide doppelte Einträge in der Liste
+                if meet_id not in meets.values():
+                    meets[display_name] = meet_id
+                
+                # Begrenze auf die 15 aktuellsten Events
+                if len(meets) >= 15:
+                    break
     except Exception:
         pass
         
@@ -219,8 +206,8 @@ def scrape_event_for_year(event_url: str, target_year: int, pool_length: str) ->
 # 3. STREAMLIT UI & AUSFÜHRUNG
 # ==============================================================================
 
-# Logo mittig platzieren
-logo_col1, logo_col2, logo_col3 = st.columns([1, 2, 1])
+# Logo exakt auf 2/3 der vorherigen Größe skalieren (mittlere Spalte = 33%)
+logo_col1, logo_col2, logo_col3 = st.columns([1, 1, 1])
 with logo_col2:
     try:
         st.image("logo_sum_blau_gelb.png", use_container_width=True)
@@ -233,8 +220,9 @@ st.divider()
 
 col1, col2 = st.columns(2)
 with col1:
-    # Das Dropdown bleibt IMMER erhalten, die manuelle Eingabe ist die Basis-Option
     recent_meets = get_meets_list()
+    
+    # Dropdown mit der manuellen Eingabe als Fallback-Option
     options = ["✍️ Wettkampf-ID manuell eingeben..."] + list(recent_meets.keys())
     
     selection = st.selectbox("Wettkampf auswählen", options)
@@ -243,7 +231,6 @@ with col1:
         meet_id_input = st.text_input("Wettkampf-ID", value="2355")
     else:
         meet_id_input = recent_meets[selection]
-        # Zeigt an, welche ID im Hintergrund ausgewählt wurde
         st.caption(f"Verwendete Wettkampf-ID: **{meet_id_input}**")
 
 with col2: 
