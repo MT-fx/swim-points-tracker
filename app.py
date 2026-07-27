@@ -189,7 +189,6 @@ if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True
         progress_text.text(f"0/{len(urls)} Bewerbe verarbeitet...")
         
         all_results = []
-        # Wir zählen mit, in wie vielen Bewerben überhaupt Resultate für diesen Jahrgang existierten
         total_events_with_category = 0 
         
         with ThreadPoolExecutor(max_workers=10) as executor:
@@ -210,7 +209,6 @@ if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True
             df_raw = pd.DataFrame(all_results)
             
             def get_live_score(pts_series, total_evt, athlete_starts):
-                # Streichen nur, wenn die Maximalanzahl der Bewerbe erreicht ist und es mehr als 1 gibt
                 if athlete_starts >= total_evt and total_evt > 1:
                     return pts_series.nlargest(total_evt - 1).sum()
                 else:
@@ -220,7 +218,6 @@ if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True
                 df_gender = df_raw[df_raw['Geschlecht'] == gender_val]
                 if df_gender.empty: continue
                 
-                # Ermittelt die Anzahl der Bewerbe, die für dieses Geschlecht im Jahrgang angeboten werden
                 gender_total_events = total_events_with_category
                 
                 df_grouped = df_gender.groupby('Name').agg(
@@ -237,7 +234,6 @@ if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True
                     pts = row['Gesamtpunkte']
                     starts = row['Anzahl_Starts']
                     
-                    # Logik für das Streichergebnis im Live-Betrieb
                     has_dropped_result = (starts >= gender_total_events and gender_total_events > 1)
                     scored_events = gender_total_events - 1 if has_dropped_result else starts
                     
@@ -249,7 +245,7 @@ if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True
                     with st.expander(f"**{idx+1}. {name}** — {pts} Pkt. | {starts} Starts ({status_icon})"):
                         athlete_events = df_gender[df_gender['Name'] == name].sort_values(by='Punkte', ascending=False)
                         
-                        for i, (_, ev_row) in enumerate(athlete_events.iterrows():
+                        for i, (_, ev_row) in enumerate(athlete_events.iterrows()):
                             if has_dropped_result and i >= scored_events:
                                 st.markdown(f"~~{ev_row['Bewerb']} : {ev_row['Zeit']} ({ev_row['Punkte']} Pkt.)~~ 📉 *Streichergebnis*")
                             else:
