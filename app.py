@@ -4,7 +4,6 @@ import pandas as pd
 from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor
 import streamlit as st
-import streamlit.components.v1 as components
 import base64
 from typing import List, Dict
 
@@ -120,6 +119,7 @@ def get_meets_list() -> Dict[str, str]:
         except Exception:
             pass
 
+    # Exakt 3 zukünftige und 10 vergangene laden
     fetch_events_from_url("https://myresults.eu/de-AT/Meets/Today-Upcoming", "🟢", 3)
     fetch_events_from_url("https://myresults.eu/de-AT/Meets/Recent", "🗓️", 10)
         
@@ -216,9 +216,18 @@ try:
 except Exception:
     img_html = ''
 
-# Fester HTML-Container: Zwingt Titel und Logo auf einer Zeile nebeneinander
+# --- CSS HACK: TASTATUR BLOCKIEREN ---
+# Dieser Block versteckt auf dem Handy das interne Text-Input der Selectbox.
+# Ohne Textfeld kann das Handy nichts fokussieren -> Die Tastatur bleibt 100%ig geschlossen!
 st.markdown(
     f"""
+    <style>
+        @media (max-width: 768px) {{
+            div[data-testid="stSelectbox"] input {{
+                display: none !important;
+            }}
+        }}
+    </style>
     <div style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; margin-bottom: 15px; gap: 10px;">
         <div style="flex: 1;">
             <h1 style="margin: 0; padding: 0; line-height: 1.1; font-size: 2.2rem; font-weight: 700;">
@@ -251,31 +260,6 @@ with col1:
 
 with col2: 
     year_input = st.selectbox("Jahrgang", [2015, 2014, 2013, 2012], index=1)
-
-# --- JAVASCRIPT-HACK GEGEN DIE MOBILE TASTATUR BEI DROPDOWNS ---
-components.html(
-    """
-    <script>
-    const parentDoc = window.parent.document;
-    
-    // Ein Wächter (Observer), der permanent schaut, ob Streamlit ein Dropdown geladen hat
-    const observer = new MutationObserver(() => {
-        // Findet alle unsichtbaren Suchfelder der Dropdowns
-        const selects = parentDoc.querySelectorAll('div[data-baseweb="select"] input');
-        selects.forEach(select => {
-            // Blockiert die Tastatur (inputmode="none") und macht das Feld nicht beschreibbar (readonly)
-            select.setAttribute('inputmode', 'none');
-            select.setAttribute('readonly', 'true');
-        });
-    });
-    
-    observer.observe(parentDoc.body, { childList: true, subtree: true });
-    </script>
-    """,
-    height=0,
-    width=0
-)
-# ----------------------------------------------------------------
 
 if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True):
     if not str(meet_id_input).strip():
