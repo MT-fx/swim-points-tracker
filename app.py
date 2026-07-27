@@ -32,6 +32,22 @@ BASE_TIMES = {
             "50m Schmetterling": 23.94, "100m Schmetterling": 52.71, "200m Schmetterling": 119.32,
             "100m Lagen": 55.11, "200m Lagen": 121.63, "400m Lagen": 255.48,
         }
+    },
+    "LCM": {
+        "m": {
+            "50m Freistil": 20.91, "100m Freistil": 46.40, "200m Freistil": 102.00, "400m Freistil": 219.96,
+            "50m Rücken": 23.55, "100m Rücken": 51.60, "200m Rücken": 111.92,
+            "50m Brust": 25.95, "100m Brust": 56.88, "200m Brust": 125.48,
+            "50m Schmetterling": 22.27, "100m Schmetterling": 49.45, "200m Schmetterling": 110.34,
+            "200m Lagen": 112.69, "400m Lagen": 242.50,
+        },
+        "w": {
+            "50m Freistil": 23.61, "100m Freistil": 51.71, "200m Freistil": 112.23, "400m Freistil": 234.18,
+            "50m Rücken": 26.86, "100m Rücken": 57.13, "200m Rücken": 123.14,
+            "50m Brust": 29.16, "100m Brust": 64.13, "200m Brust": 137.55,
+            "50m Schmetterling": 24.43, "100m Schmetterling": 54.60, "200m Schmetterling": 125.70,
+            "200m Lagen": 125.70, "400m Lagen": 263.65,
+        }
     }
 }
 
@@ -45,11 +61,11 @@ def time_to_seconds(time_str: str) -> float:
     except Exception:
         return 0.0
 
-def calculate_points(time_str: str, discipline: str, gender: str, pool_length: str = "SCM") -> int:
+def calculate_points(time_str: str, discipline: str, gender: str, pool_length: str = "LCM") -> int:
     t = time_to_seconds(time_str)
     if t <= 0: return 0
     
-    course_data = BASE_TIMES.get(pool_length, BASE_TIMES["SCM"]).get(gender, {})
+    course_data = BASE_TIMES.get(pool_length, BASE_TIMES["LCM"]).get(gender, {})
     base_time = None
     for key in sorted(course_data.keys(), key=len, reverse=True):
         if key.lower() in discipline.lower():
@@ -62,7 +78,7 @@ def calculate_points(time_str: str, discipline: str, gender: str, pool_length: s
 # ==============================================================================
 # 2. SCRAPING-LOGIK
 # ==============================================================================
-@st.cache_data(show_spinner=False, ttl=60) # Cacht die URLs für 60 Sekunden, um Server-Bans zu vermeiden
+@st.cache_data(show_spinner=False, ttl=60)
 def get_all_event_urls(meet_id: str) -> List[str]:
     base_url = f"https://myresults.eu/de-AT/Meets/Recent/{meet_id}/Results"
     try:
@@ -131,21 +147,26 @@ def scrape_event_for_year(event_url: str, target_year: int, pool_length: str) ->
 # 3. STREAMLIT UI & AUSFÜHRUNG
 # ==============================================================================
 st.title("🏊 Swim-Points Tracker")
-st.markdown("Live-Rangliste nach FINA-Punkten. Das Streichergebnis (Best of X-1) wird erst angewendet, wenn alle Bewerbe geschwommen wurden.")
+st.markdown("Live-Rangliste nach AQUA-Punkten. Die Anzahl der gewerteten Resultate passt sich automatisch der Altersklasse (Jahrgang) an.")
 
-# Eingabefelder: Optimiert für Mobile Ansicht (2x2 Grid)
-col1, col2 = st.columns(2)
+# Eingabefelder: Optimiert für Mobile Ansicht
+col1, col2, col3 = st.columns(3)
 with col1: 
     meet_id_input = st.text_input("Wettkampf-ID", value="2355")
 with col2: 
-    year_input = st.number_input("Jahrgang", min_value=2000, max_value=2030, value=2014)
-
-col3, col4 = st.columns(2)
+    # Fokus auf die relevanten Jahrgänge 2012-2015
+    year_input = st.selectbox("Jahrgang", [2015, 2014, 2013, 2012], index=1)
 with col3: 
-    pool_input = st.selectbox("Bahnlänge", ["SCM", "LCM"])
-with col4: 
-    # 💡 NEU: Hier definiert man im Vorfeld, wie viele Rennen die Kids insgesamt schwimmen werden
-    target_events_input = st.number_input("Bewerbe gesamt (im Wettkampf)", min_value=1, max_value=20, value=6)
+    # Standardmäßig Langbahn ausgewählt
+    pool_input = st.selectbox("Bahnlänge", ["LCM", "SCM"])
+
+# Dynamische Ziel-Bewerbe anhand der Ausschreibung festlegen
+if year_input in [2014, 2015]:
+    target_events_input = 6
+else:
+    target_events_input = 5
+
+st.info(f"ℹ️ **Regelwerk für Jg. {year_input}:** Es werden die besten **{target_events_input} Resultate** gewertet.")
 
 if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True):
     urls = get_all_event_urls(meet_id_input)
@@ -173,14 +194,11 @@ if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True
             st.success("Aktuelle Live-Daten erfolgreich geladen!")
             df_raw = pd.DataFrame(all_results)
             
-            # 💡 NEU: Hilfsfunktion für die dynamische Punkteberechnung während des Wettkampfs
             def get_live_score(pts_series, target_events):
                 starts = len(pts_series)
                 if starts >= target_events:
-                    # Athlet ist alle Bewerbe geschwommen -> Schlechtestes wird gestrichen
-                    return pts_series.nlargest(target_events - 1).sum()
+                    return pts_series.nlargest(target_events).sum()
                 else:
-                    # Athlet hat noch Bewerbe offen -> Alle Punkte zählen
                     return pts_series.sum()
 
             for gender_val, gender_name in [("m", "Herren"), ("w", "Damen")]:
@@ -202,18 +220,17 @@ if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True
                     pts = row['Gesamtpunkte']
                     starts = row['Anzahl_Starts']
                     
-                    # Logik für die UI Anzeige
                     if starts >= target_events_input:
-                        status_icon = "🏁 Finale Wertung"
+                        status_icon = "🏁 Wertung komplett"
                     else:
                         status_icon = "⏱️ Zwischenstand"
                     
-                    with st.expander(f"**{idx+1}. {name}** — {pts} Pkt. | {starts}/{target_events_input} Starts ({status_icon})"):
+                    with st.expander(f"**{idx+1}. {name}** — {pts} Pkt. | {starts} Starts ({status_icon})"):
                         athlete_events = df_gender[df_gender['Name'] == name].sort_values(by='Punkte', ascending=False)
                         
                         for i, (_, ev_row) in enumerate(athlete_events.iterrows()):
-                            # Streichen nur, wenn das Ziel erreicht ist UND es sich um die schlechtesten Ergebnisse nach dem X-1 Cut handelt
-                            if starts >= target_events_input and i >= (target_events_input - 1):
+                            # Alles ab dem Limit (target_events_input) ist ein Streichergebnis
+                            if i >= target_events_input:
                                 st.markdown(f"~~{ev_row['Bewerb']} : {ev_row['Zeit']} ({ev_row['Punkte']} Pkt.)~~ 📉 *Streichergebnis*")
                             else:
                                 st.markdown(f"**{ev_row['Bewerb']}** : {ev_row['Zeit']} ({ev_row['Punkte']} Pkt.)")
