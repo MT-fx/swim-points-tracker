@@ -80,46 +80,51 @@ def calculate_points(time_str: str, discipline: str, gender: str, pool_length: s
 # ==============================================================================
 @st.cache_data(show_spinner=False, ttl=1800)
 def get_meets_list() -> Dict[str, str]:
-    """Sucht absolut robust nach den aktuellsten Wettkämpfen auf der Startseite."""
+    """Sucht getrennt nach zukünftigen (max 3) und vergangenen (max 10) Wettkämpfen."""
     meets = {}
-    try:
-        resp = requests.get("https://myresults.eu/de-AT", headers=HTTP_HEADERS, timeout=10)
-        soup = BeautifulSoup(resp.text, 'html.parser')
-        
-        # Alle Links durchsuchen, die eine typische myresults ID enthalten
-        for a_tag in soup.find_all('a', href=re.compile(r'/Meets/[^/]+/(\d+)')):
-            href = a_tag.get('href', '')
-            match = re.search(r'/Meets/[^/]+/(\d+)', href)
+    
+    def fetch_events_from_url(url: str, icon: str, max_items: int):
+        try:
+            resp = requests.get(url, headers=HTTP_HEADERS, timeout=10)
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            count = 0
             
-            if match:
-                meet_id = match.group(1)
-                name = a_tag.get_text(strip=True)
+            for a_tag in soup.find_all('a', href=re.compile(r'/Meets/[^/]+/(\d+)')):
+                href = a_tag.get('href', '')
+                match = re.search(r'/Meets/[^/]+/(\d+)', href)
                 
-                # Überspringe kleine Buttons oder Menüpunkte
-                if not name or name.lower() in ["info", "ergebnisse", "meldungen", "live", "overview", "details"]:
-                    continue
+                if match:
+                    meet_id = match.group(1)
+                    name = a_tag.get_text(strip=True)
                     
-                # Versuche das Datum aus der Tabelle zu ziehen
-                datum = "🗓️"
-                parent_tr = a_tag.find_parent('tr')
-                if parent_tr:
-                    tds = parent_tr.find_all('td')
-                    if len(tds) > 0:
-                        datum_text = tds[0].get_text(strip=True)
-                        if re.match(r'^\d{2}\.\d{2}\.', datum_text):
-                            datum = f"🗓️ {datum_text}"
-                            
-                display_name = f"{datum} | {name[:50]}"
-                
-                # Vermeide doppelte Einträge in der Liste
-                if meet_id not in meets.values():
-                    meets[display_name] = meet_id
-                
-                # Begrenze auf die 15 aktuellsten Events
-                if len(meets) >= 15:
-                    break
-    except Exception:
-        pass
+                    # Vermeide Buttons oder Navigationselemente
+                    if not name or name.lower() in ["info", "ergebnisse", "meldungen", "live", "overview", "details"]:
+                        continue
+                        
+                    datum = ""
+                    parent_tr = a_tag.find_parent('tr')
+                    if parent_tr:
+                        tds = parent_tr.find_all('td')
+                        if len(tds) > 0:
+                            datum_text = tds[0].get_text(strip=True)
+                            if re.match(r'^\d{2}\.\d{2}\.', datum_text):
+                                datum = f"{datum_text} | "
+                                
+                    display_name = f"{icon} {datum}{name[:50]}"
+                    
+                    if meet_id not in meets.values():
+                        meets[display_name] = meet_id
+                        count += 1
+                        if count >= max_items:
+                            break
+        except Exception:
+            pass
+
+    # 1. Hole exakt 3 zukünftige/laufende Wettkämpfe
+    fetch_events_from_url("https://myresults.eu/de-AT/Meets/Today-Upcoming", "🟢", 3)
+    
+    # 2. Hole exakt 10 vergangene Wettkämpfe
+    fetch_events_from_url("https://myresults.eu/de-AT/Meets/Recent", "🗓️", 10)
         
     return meets
 
@@ -222,16 +227,15 @@ col1, col2 = st.columns(2)
 with col1:
     recent_meets = get_meets_list()
     
-    # Dropdown mit der manuellen Eingabe als Fallback-Option
     options = ["✍️ Wettkampf-ID manuell eingeben..."] + list(recent_meets.keys())
-    
     selection = st.selectbox("Wettkampf auswählen", options)
     
     if selection == "✍️ Wettkampf-ID manuell eingeben...":
         meet_id_input = st.text_input("Wettkampf-ID", value="2355")
     else:
         meet_id_input = recent_meets[selection]
-        st.caption(f"Verwendete Wettkampf-ID: **{meet_id_input}**")
+        # Zeigt die extrahierte ID deutlich an, wenn ein Menüpunkt ausgewählt wurde
+        st.info(f"🆔 **Ausgewählte Wettkampf-ID:** {meet_id_input}")
 
 with col2: 
     year_input = st.selectbox("Jahrgang", [2015, 2014, 2013, 2012], index=1)
