@@ -4,6 +4,7 @@ import pandas as pd
 from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor
 import streamlit as st
+import base64
 from typing import List, Dict
 
 # ==============================================================================
@@ -206,33 +207,32 @@ def scrape_event_for_year(event_url: str, target_year: int, pool_length: str) ->
 # 3. STREAMLIT UI & AUSFÜHRUNG
 # ==============================================================================
 
-# CSS: Zentriert das Bild generell und macht es auf Handys (Breite < 768px) kleiner
+# Versuche das Logo einzulesen, um es direkt ins HTML einzubetten
+try:
+    with open("logo_sum_blau_gelb.png", "rb") as img_file:
+        logo_base64 = base64.b64encode(img_file.read()).decode()
+    img_html = f'<img src="data:image/png;base64,{logo_base64}" style="max-width: 120px; width: 100%; height: auto; display: block; margin-left: auto;">'
+except Exception:
+    img_html = ''
+
+# Fester HTML-Container: Zwingt Titel und Logo auf einer Zeile nebeneinander
 st.markdown(
-    """
-    <style>
-        [data-testid="stImage"] {
-            display: flex;
-            justify-content: center;
-        }
-        @media (max-width: 768px) {
-            [data-testid="stImage"] img {
-                max-width: 130px !important;
-            }
-        }
-    </style>
+    f"""
+    <div style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; margin-bottom: 15px; gap: 10px;">
+        <div style="flex: 1;">
+            <h1 style="margin: 0; padding: 0; line-height: 1.1; font-size: 2.2rem; font-weight: 700;">
+                🏊 Swim-<br>Points<br>Tracker
+            </h1>
+        </div>
+        <div style="flex-shrink: 0; width: 120px;">
+            {img_html}
+        </div>
+    </div>
+    <p style="margin-top: 0; margin-bottom: 0;">Live-Rangliste nach AQUA-Punkten (Best of X-1 Regelung).</p>
     """,
     unsafe_allow_html=True
 )
 
-logo_col1, logo_col2, logo_col3 = st.columns([1, 1, 1])
-with logo_col2:
-    try:
-        st.image("logo_sum_blau_gelb.png", use_container_width=True)
-    except Exception:
-        pass
-
-st.title("🏊 Swim-Points Tracker")
-st.markdown("Live-Rangliste nach AQUA-Punkten (Best of X-1 Regelung).")
 st.divider()
 
 col1, col2 = st.columns(2)
