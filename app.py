@@ -79,52 +79,61 @@ def calculate_points(time_str: str, discipline: str, gender: str, pool_length: s
 # 2. SCRAPING-LOGIK
 # ==============================================================================
 @st.cache_data(show_spinner=False, ttl=1800)
-def get_recent_meets() -> Dict[str, str]:
-    """Sucht nach Wettkämpfen in den expliziten Bereichen Today-Upcoming und Recent."""
+def get_meets_list() -> Dict[str, str]:
+    """Lädt die 3 nächsten und 10 letzten Wettkämpfe für das Dropdown."""
     meets = {}
-    urls_to_scrape = [
-        ("🟢 Aktuell/Kommend", "https://myresults.eu/de-AT/Meets/Today-Upcoming"),
-        ("🗓️ Vergangen", "https://myresults.eu/de-AT/Meets/Recent")
-    ]
     
-    for status, url in urls_to_scrape:
-        try:
-            response = requests.get(url, headers=HTTP_HEADERS, timeout=10)
-            if response.status_code != 200:
-                continue
-                
-            soup = BeautifulSoup(response.text, 'html.parser')
-            found_in_table = False
-            
-            # 1. Versuch: Klassisches Tabellen-Layout auslesen (inkl. "-" für Today-Upcoming URLs)
-            for link in soup.find_all('a', href=re.compile(r'/Meets/[a-zA-Z-]+/(\d+)', re.IGNORECASE)):
-                match = re.search(r'/(\d+)/?$', link.get('href', ''))
-                if match:
-                    meet_id = match.group(1)
+    # 1. Kommende & Aktuelle Wettkämpfe (Maximal 3)
+    try:
+        resp = requests.get("https://myresults.eu/de-AT/Meets/Today-Upcoming", headers=HTTP_HEADERS, timeout=5)
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        count = 0
+        for link in soup.find_all('a', href=re.compile(r'/Meets/[a-zA-Z-]+/(\d+)')):
+            match = re.search(r'/(\d+)/?$', link.get('href', ''))
+            if match:
+                meet_id = match.group(1)
+                name = link.get_text(strip=True)
+                # Buttons wie "Info" herausfiltern
+                if name and name.lower() not in ["info", "ergebnisse", "meldungen", "live"]:
                     row = link.find_parent('tr')
-                    if row:
-                        cols = row.find_all('td')
-                        if len(cols) >= 2:
-                            datum = cols[0].get_text(strip=True)
-                            name = cols[1].get_text(strip=True)
-                            if datum and name:
-                                display_name = f"{status}: {datum} | {name[:45]}..." if len(name) > 45 else f"{status}: {datum} | {name}"
-                                meets[display_name] = meet_id
-                                found_in_table = True
-                                
-            # 2. Versuch (Fallback): Falls sich das Tabellenlayout ändert, reine Links abgreifen
-            if not found_in_table:
-                for link in soup.find_all('a', href=re.compile(r'/Meets/[a-zA-Z-]+/(\d+)', re.IGNORECASE)):
-                    match = re.search(r'/(\d+)/?$', link.get('href', ''))
-                    if match:
-                        meet_id = match.group(1)
-                        name = link.get_text(strip=True)
-                        if name and name.lower() not in ["info", "ergebnisse", "meldungen"]:
-                            display_name = f"{status}: ID {meet_id} | {name[:45]}..."
-                            meets[display_name] = meet_id
-        except Exception:
-            pass
-            
+                    datum = row.find('td').get_text(strip=True) if row and row.find('td') else ""
+                    
+                    display_name = f"🟢 {datum} | {name[:45]}..." if len(name) > 45 else f"🟢 {datum} | {name}"
+                    if display_name not in meets:
+                        meets[display_name] = meet_id
+                        count += 1
+                        if count >= 3:
+                            break
+    except Exception:
+        pass
+
+    # 2. Vergangene Wettkämpfe (Maximal 10)
+    try:
+        resp = requests.get("https://myresults.eu/de-AT/Meets/Recent", headers=HTTP_HEADERS, timeout=5)
+        soup = BeautifulSoup(resp.text, 'html.parser')
+        count = 0
+        for link in soup.find_all('a', href=re.compile(r'/Meets/[a-zA-Z-]+/(\d+)')):
+            match = re.search(r'/(\d+)/?$', link.get('href', ''))
+            if match:
+                meet_id = match.group(1)
+                # Überspringen, falls der Wettkampf schon in den "Aktuellen" ist
+                if meet_id in meets.values():
+                    continue
+                    
+                name = link.get_text(strip=True)
+                if name and name.lower() not in ["info", "ergebnisse", "meldungen", "live"]:
+                    row = link.find_parent('tr')
+                    datum = row.find('td').get_text(strip=True) if row and row.find('td') else ""
+                    
+                    display_name = f"🗓️ {datum} | {name[:45]}..." if len(name) > 45 else f"🗓️ {datum} | {name}"
+                    if display_name not in meets:
+                        meets[display_name] = meet_id
+                        count += 1
+                        if count >= 10:
+                            break
+    except Exception:
+        pass
+        
     return meets
 
 @st.cache_data(show_spinner=False, ttl=60)
@@ -210,11 +219,13 @@ def scrape_event_for_year(event_url: str, target_year: int, pool_length: str) ->
 # 3. STREAMLIT UI & AUSFÜHRUNG
 # ==============================================================================
 
-# Logo ganz oben platzieren
-try:
-    st.image("logo_sum_blau_gelb.png", width=120)
-except Exception:
-    pass
+# Logo mittig platzieren
+logo_col1, logo_col2, logo_col3 = st.columns([1, 2, 1])
+with logo_col2:
+    try:
+        st.image("logo_sum_blau_gelb.png", use_container_width=True)
+    except Exception:
+        pass
 
 st.title("🏊 Swim-Points Tracker")
 st.markdown("Live-Rangliste nach AQUA-Punkten (Best of X-1 Regelung).")
@@ -222,19 +233,18 @@ st.divider()
 
 col1, col2 = st.columns(2)
 with col1:
-    recent_meets = get_recent_meets()
+    # Das Dropdown bleibt IMMER erhalten, die manuelle Eingabe ist die Basis-Option
+    recent_meets = get_meets_list()
+    options = ["✍️ Wettkampf-ID manuell eingeben..."] + list(recent_meets.keys())
     
-    if recent_meets:
-        # Dropdown mit der manuellen Eingabe als erste Option
-        options = ["Wettkampf-ID manuell eingeben..."] + list(recent_meets.keys())
-        selection = st.selectbox("Wettkampf auswählen", options)
-        
-        if selection == "Wettkampf-ID manuell eingeben...":
-            meet_id_input = st.text_input("Wettkampf-ID", value="2355")
-        else:
-            meet_id_input = recent_meets[selection]
-    else:
+    selection = st.selectbox("Wettkampf auswählen", options)
+    
+    if selection == "✍️ Wettkampf-ID manuell eingeben...":
         meet_id_input = st.text_input("Wettkampf-ID", value="2355")
+    else:
+        meet_id_input = recent_meets[selection]
+        # Zeigt an, welche ID im Hintergrund ausgewählt wurde
+        st.caption(f"Verwendete Wettkampf-ID: **{meet_id_input}**")
 
 with col2: 
     year_input = st.selectbox("Jahrgang", [2015, 2014, 2013, 2012], index=1)
