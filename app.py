@@ -170,7 +170,8 @@ with header_col1:
 
 with header_col2:
     try:
-        st.image("logo_sum_blau_gelb.png", use_container_width=True)
+        # Feste Breite von 120 Pixeln verhindert das Aufblähen auf dem Smartphone
+        st.image("logo_sum_blau_gelb.png", width=120)
     except Exception:
         pass # Ignoriert den Fehler unauffällig, falls das Bild fehlt
 
