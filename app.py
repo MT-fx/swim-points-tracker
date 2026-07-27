@@ -80,7 +80,6 @@ def calculate_points(time_str: str, discipline: str, gender: str, pool_length: s
 # ==============================================================================
 @st.cache_data(show_spinner=False, ttl=1800)
 def get_meets_list() -> Dict[str, str]:
-    """Sucht getrennt nach zukünftigen (max 3) und vergangenen (max 10) Wettkämpfen."""
     meets = {}
     
     def fetch_events_from_url(url: str, icon: str, max_items: int):
@@ -97,7 +96,6 @@ def get_meets_list() -> Dict[str, str]:
                     meet_id = match.group(1)
                     name = a_tag.get_text(strip=True)
                     
-                    # Vermeide Buttons oder Navigationselemente
                     if not name or name.lower() in ["info", "ergebnisse", "meldungen", "live", "overview", "details"]:
                         continue
                         
@@ -120,10 +118,7 @@ def get_meets_list() -> Dict[str, str]:
         except Exception:
             pass
 
-    # 1. Hole exakt 3 zukünftige/laufende Wettkämpfe
     fetch_events_from_url("https://myresults.eu/de-AT/Meets/Today-Upcoming", "🟢", 3)
-    
-    # 2. Hole exakt 10 vergangene Wettkämpfe
     fetch_events_from_url("https://myresults.eu/de-AT/Meets/Recent", "🗓️", 10)
         
     return meets
@@ -211,7 +206,24 @@ def scrape_event_for_year(event_url: str, target_year: int, pool_length: str) ->
 # 3. STREAMLIT UI & AUSFÜHRUNG
 # ==============================================================================
 
-# Logo exakt auf 2/3 der vorherigen Größe skalieren (mittlere Spalte = 33%)
+# CSS: Zentriert das Bild generell und macht es auf Handys (Breite < 768px) kleiner
+st.markdown(
+    """
+    <style>
+        [data-testid="stImage"] {
+            display: flex;
+            justify-content: center;
+        }
+        @media (max-width: 768px) {
+            [data-testid="stImage"] img {
+                max-width: 130px !important;
+            }
+        }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
 logo_col1, logo_col2, logo_col3 = st.columns([1, 1, 1])
 with logo_col2:
     try:
@@ -234,7 +246,6 @@ with col1:
         meet_id_input = st.text_input("Wettkampf-ID", value="2355")
     else:
         meet_id_input = recent_meets[selection]
-        # Zeigt die extrahierte ID deutlich an, wenn ein Menüpunkt ausgewählt wurde
         st.info(f"🆔 **Ausgewählte Wettkampf-ID:** {meet_id_input}")
 
 with col2: 
