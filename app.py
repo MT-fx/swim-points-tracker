@@ -216,8 +216,17 @@ except Exception:
     img_html = ''
 
 # Fester HTML-Container: Zwingt Titel und Logo auf einer Zeile nebeneinander
+# NEU: Der Style-Block unten unterdrückt die Tastatur auf mobilen Geräten!
 st.markdown(
     f"""
+    <style>
+        /* Verhindert das Öffnen der mobilen Tastatur beim Klick auf die Selectbox */
+        @media (max-width: 768px) {{
+            div[data-testid="stSelectbox"] input {{
+                pointer-events: none !important;
+            }}
+        }}
+    </style>
     <div style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; margin-bottom: 15px; gap: 10px;">
         <div style="flex: 1;">
             <h1 style="margin: 0; padding: 0; line-height: 1.1; font-size: 2.2rem; font-weight: 700;">
