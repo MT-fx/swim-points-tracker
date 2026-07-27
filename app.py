@@ -102,6 +102,27 @@ def get_all_event_urls(meet_id: str) -> List[str]:
 
     return sorted([f"https://myresults.eu/de-AT/Meets/Recent/{meet_id}/Results/{eid}" for eid in event_ids])
 
+@st.cache_data(show_spinner=False, ttl=300)
+def get_pool_length(meet_id: str) -> str:
+    """Liest die Bahnlänge von der Overview-Seite aus."""
+    url = f"https://myresults.eu/de-AT/Meets/Recent/{meet_id}/Overview"
+    try:
+        response = requests.get(url, headers=HTTP_HEADERS, timeout=10)
+        response.raise_for_status()
+        
+        # Den gesamten Text der Webseite durchsuchen
+        text = response.text.lower()
+        
+        if "50m" in text or "lcm" in text:
+            return "LCM"
+        elif "25m" in text or "scm" in text:
+            return "SCM"
+            
+    except requests.RequestException:
+        pass
+        
+    return "LCM"  # Default-Fallback (Langbahn) falls nichts gefunden wird
+
 def scrape_event_for_year(event_url: str, target_year: int, pool_length: str) -> List[Dict]:
     try:
         response = requests.get(event_url, headers=HTTP_HEADERS, timeout=10)
@@ -149,16 +170,13 @@ def scrape_event_for_year(event_url: str, target_year: int, pool_length: str) ->
 st.title("🏊 Swim-Points Tracker")
 st.markdown("Live-Rangliste nach AQUA-Punkten. Die Anzahl der gewerteten Resultate passt sich automatisch der Altersklasse (Jahrgang) an.")
 
-# Eingabefelder: Optimiert für Mobile Ansicht
-col1, col2, col3 = st.columns(3)
+# Eingabefelder: Optimiert für Mobile Ansicht (Zweispaltig, da Bahnlänge automatisch erkannt wird)
+col1, col2 = st.columns(2)
 with col1: 
     meet_id_input = st.text_input("Wettkampf-ID", value="2355")
 with col2: 
     # Fokus auf die relevanten Jahrgänge 2012-2015
     year_input = st.selectbox("Jahrgang", [2015, 2014, 2013, 2012], index=1)
-with col3: 
-    # Standardmäßig Langbahn ausgewählt
-    pool_input = st.selectbox("Bahnlänge", ["LCM", "SCM"])
 
 # Dynamische Ziel-Bewerbe anhand der Ausschreibung festlegen
 if year_input in [2014, 2015]:
@@ -169,6 +187,12 @@ else:
 st.info(f"ℹ️ **Regelwerk für Jg. {year_input}:** Es werden die besten **{target_events_input} Resultate** gewertet.")
 
 if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True):
+    # 1. Bahnlänge automatisch auslesen und anzeigen
+    pool_length_code = get_pool_length(meet_id_input)
+    pool_display = "50m (Langbahn - LCM)" if pool_length_code == "LCM" else "25m (Kurzbahn - SCM)"
+    st.success(f"📍 **Erkannte Bahnlänge:** {pool_display}")
+    
+    # 2. Event-URLs sammeln
     urls = get_all_event_urls(meet_id_input)
     
     if not urls:
@@ -180,7 +204,7 @@ if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True
         
         all_results = []
         with ThreadPoolExecutor(max_workers=10) as executor:
-            futures = [executor.submit(scrape_event_for_year, url, year_input, pool_input) for url in urls]
+            futures = [executor.submit(scrape_event_for_year, url, year_input, pool_length_code) for url in urls]
             for idx, future in enumerate(futures, 1):
                 res = future.result()
                 if res: all_results.extend(res)
@@ -191,7 +215,6 @@ if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True
         if not all_results:
             st.warning(f"Keine Ergebnisse für Jahrgang {year_input} in diesem Wettkampf gefunden.")
         else:
-            st.success("Aktuelle Live-Daten erfolgreich geladen!")
             df_raw = pd.DataFrame(all_results)
             
             def get_live_score(pts_series, target_events):
