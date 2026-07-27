@@ -16,6 +16,7 @@ HTTP_HEADERS = {
     'Accept-Language': 'de-AT,de;q=0.9,en;q=0.7',
 }
 
+# Basenzeiten aus dem PDF "Points-Base-times-SCM-and-LCM-2026_01.2026.pdf"
 BASE_TIMES = {
     "SCM": {
         "m": {
@@ -104,24 +105,17 @@ def get_all_event_urls(meet_id: str) -> List[str]:
 
 @st.cache_data(show_spinner=False, ttl=300)
 def get_pool_length(meet_id: str) -> str:
-    """Liest die Bahnlänge von der Overview-Seite aus."""
     url = f"https://myresults.eu/de-AT/Meets/Recent/{meet_id}/Overview"
     try:
         response = requests.get(url, headers=HTTP_HEADERS, timeout=10)
         response.raise_for_status()
-        
-        # Den gesamten Text der Webseite durchsuchen
         text = response.text.lower()
         
-        if "50m" in text or "lcm" in text:
-            return "LCM"
-        elif "25m" in text or "scm" in text:
-            return "SCM"
-            
+        if "50m" in text or "lcm" in text: return "LCM"
+        elif "25m" in text or "scm" in text: return "SCM"
     except requests.RequestException:
         pass
-        
-    return "LCM"  # Default-Fallback (Langbahn) falls nichts gefunden wird
+    return "LCM"
 
 def scrape_event_for_year(event_url: str, target_year: int, pool_length: str) -> List[Dict]:
     try:
@@ -168,31 +162,21 @@ def scrape_event_for_year(event_url: str, target_year: int, pool_length: str) ->
 # 3. STREAMLIT UI & AUSFÜHRUNG
 # ==============================================================================
 st.title("🏊 Swim-Points Tracker")
-st.markdown("Live-Rangliste nach AQUA-Punkten. Die Anzahl der gewerteten Resultate passt sich automatisch der Altersklasse (Jahrgang) an.")
+st.markdown("Live-Rangliste nach AQUA-Punkten.")
 
-# Eingabefelder: Optimiert für Mobile Ansicht (Zweispaltig, da Bahnlänge automatisch erkannt wird)
 col1, col2 = st.columns(2)
 with col1: 
     meet_id_input = st.text_input("Wettkampf-ID", value="2355")
 with col2: 
-    # Fokus auf die relevanten Jahrgänge 2012-2015
-    year_input = st.selectbox("Jahrgang", [2015, 2014, 2013, 2012], index=1)
+    year_input = st.selectbox("Jahrgang", [2016, 2015, 2014, 2013, 2012, 2011, 2010], index=2)
 
-# Dynamische Ziel-Bewerbe anhand der Ausschreibung festlegen
-if year_input in [2014, 2015]:
-    target_events_input = 6
-else:
-    target_events_input = 5
-
-st.info(f"ℹ️ **Regelwerk für Jg. {year_input}:** Es werden die besten **{target_events_input} Resultate** gewertet.")
+st.info("ℹ️ **Regelwerk:** Es wird maximal das *schlechteste Einzelergebnis* gestrichen, aber **nur**, wenn der Athlet an *allen* in seiner Wertungsklasse angebotenen Bewerben teilgenommen hat. Andernfalls werden alle Starts gewertet.")
 
 if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True):
-    # 1. Bahnlänge automatisch auslesen und anzeigen
     pool_length_code = get_pool_length(meet_id_input)
     pool_display = "50m (Langbahn - LCM)" if pool_length_code == "LCM" else "25m (Kurzbahn - SCM)"
     st.success(f"📍 **Erkannte Bahnlänge:** {pool_display}")
     
-    # 2. Event-URLs sammeln
     urls = get_all_event_urls(meet_id_input)
     
     if not urls:
@@ -208,7 +192,6 @@ if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True
             for idx, future in enumerate(futures, 1):
                 res = future.result()
                 if res: all_results.extend(res)
-                # UI Update Live
                 progress_bar.progress(idx / len(urls))
                 progress_text.text(f"{idx}/{len(urls)} Bewerbe verarbeitet...")
                 
@@ -217,10 +200,12 @@ if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True
         else:
             df_raw = pd.DataFrame(all_results)
             
-            def get_live_score(pts_series, target_events):
+            # Dynamische Berechnung basierend auf der Gesamtanzahl der Bewerbe
+            def get_live_score(pts_series, total_evt):
                 starts = len(pts_series)
-                if starts >= target_events:
-                    return pts_series.nlargest(target_events).sum()
+                # Nur streichen, wenn ALLE Bewerbe geschwommen wurden UND es mehr als 1 Bewerb gab
+                if starts == total_evt and starts > 1:
+                    return pts_series.nlargest(starts - 1).sum()
                 else:
                     return pts_series.sum()
 
@@ -228,32 +213,37 @@ if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True
                 df_gender = df_raw[df_raw['Geschlecht'] == gender_val]
                 if df_gender.empty: continue
                 
+                # Zählt alle einzigartigen Bewerbe, die für dieses Geschlecht & Alter ausgetragen wurden
+                total_events = df_gender['Bewerb'].nunique()
+                
                 df_grouped = df_gender.groupby('Name').agg(
-                    Gesamtpunkte=('Punkte', lambda x: get_live_score(x, target_events_input)),
+                    Gesamtpunkte=('Punkte', lambda x: get_live_score(x, total_events)),
                     Anzahl_Starts=('Bewerb', 'count')
                 ).reset_index()
                 
                 df_sorted = df_grouped.sort_values(by='Gesamtpunkte', ascending=False).reset_index(drop=True)
                 
-                st.subheader(f"🏆 {gender_name} - Jg. {year_input}")
+                st.subheader(f"🏆 {gender_name} - Jg. {year_input} (Max. Bewerbe: {total_events})")
                 
-                # Mobile-freundliche Ausgabe
                 for idx, row in df_sorted.iterrows():
                     name = row['Name']
                     pts = row['Gesamtpunkte']
                     starts = row['Anzahl_Starts']
                     
-                    if starts >= target_events_input:
-                        status_icon = "🏁 Wertung komplett"
+                    # Status Icon und Anzahl der gewerteten Resultate bestimmen
+                    if starts == total_events and starts > 1:
+                        status_icon = "🏁 1 Streichergebnis"
+                        scored_events = starts - 1
                     else:
-                        status_icon = "⏱️ Zwischenstand"
+                        status_icon = "⏱️ Alle gewertet"
+                        scored_events = starts
                     
-                    with st.expander(f"**{idx+1}. {name}** — {pts} Pkt. | {starts} Starts ({status_icon})"):
+                    with st.expander(f"**{idx+1}. {name}** — {pts} Pkt. | {starts}/{total_events} Starts ({status_icon})"):
                         athlete_events = df_gender[df_gender['Name'] == name].sort_values(by='Punkte', ascending=False)
                         
                         for i, (_, ev_row) in enumerate(athlete_events.iterrows()):
-                            # Alles ab dem Limit (target_events_input) ist ein Streichergebnis
-                            if i >= target_events_input:
+                            # Sobald der Index die Anzahl der gewerteten Events erreicht, handelt es sich um das Streichresultat
+                            if i >= scored_events:
                                 st.markdown(f"~~{ev_row['Bewerb']} : {ev_row['Zeit']} ({ev_row['Punkte']} Pkt.)~~ 📉 *Streichergebnis*")
                             else:
                                 st.markdown(f"**{ev_row['Bewerb']}** : {ev_row['Zeit']} ({ev_row['Punkte']} Pkt.)")
