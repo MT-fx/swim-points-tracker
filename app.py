@@ -169,7 +169,7 @@ with col1:
 with col2: 
     year_input = st.selectbox("Jahrgang", [2015, 2014, 2013, 2012], index=1)
 
-st.info(f"ℹ️ **Modus:** Sobald du auf Abrufen klickst, lädt das Skript die Daten, ermittelt automatisch die echten Bewerbe für Jg. {year_input} und wendet die Best-of-(X-1)-Wertung an.")
+st.info("ℹ️ **Modus:** Klicke auf Abrufen, um die Rangliste zu laden. Das Skript zeigt dir direkt an, wie viele Bewerbe für den Jahrgang im System verfügbar sind.")
 
 if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True):
     pool_length_code = get_pool_length(meet_id_input)
@@ -203,12 +203,11 @@ if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True
                 df_gender = df_raw[df_raw['Geschlecht'] == gender_val]
                 if df_gender.empty: continue
                 
-                # Echte Anzahl der einzigartigen Bewerbe, die für DIESES Geschlecht in diesem Jahrgang stattfanden (z.B. 6)
+                # Echte Anzahl der einzigartigen Bewerbe im System für diesen Jahrgang & Geschlecht
                 total_events = df_gender['Bewerb'].nunique()
                 scored_events = max(1, total_events - 1)
                 
                 def get_live_score(pts_series, starts_count):
-                    # Wenn alle Bewerbe geschwommen wurden, gilt Best of X-1
                     if starts_count >= total_events and total_events > 1:
                         return pts_series.nlargest(scored_events).sum()
                     else:
@@ -221,7 +220,9 @@ if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True
                 
                 df_sorted = df_grouped.sort_values(by='Gesamtpunkte', ascending=False).reset_index(drop=True)
                 
-                st.subheader(f"🏆 {gender_name} - Jg. {year_input} ({total_events} Bewerbe im Programm)")
+                # 💡 NEU: Prominente Info direkt über der Rangliste, wie viele Bewerbe möglich waren
+                st.markdown(f"### 🏆 {gender_name} - Jg. {year_input}")
+                st.info(f"📊 Für den Jahrgang {year_input} gab es in dieser Kategorie insgesamt **{total_events} mögliche Bewerbe**.")
                 
                 for idx, row in df_sorted.iterrows():
                     name = row['Name']
@@ -231,7 +232,7 @@ if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True
                     has_dropped_result = (starts >= total_events and total_events > 1)
                     
                     if has_dropped_result:
-                        status_icon = f"🏁 Finale Wertung (Best of {scored_events})"
+                        status_icon = f"🏁 Finale Wertung (Best of {scored_events} von {total_events})"
                     else:
                         status_icon = f"⏱️ Zwischenstand ({starts}/{total_events} Bewerbe)"
                     
