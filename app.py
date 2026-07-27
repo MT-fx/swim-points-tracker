@@ -216,15 +216,16 @@ try:
 except Exception:
     img_html = ''
 
-# --- CSS HACK: TASTATUR BLOCKIEREN ---
-# Dieser Block versteckt auf dem Handy das interne Text-Input der Selectbox.
-# Ohne Textfeld kann das Handy nichts fokussieren -> Die Tastatur bleibt 100%ig geschlossen!
+# --- NEUER CSS HACK: Durchlässiges Eingabefeld ---
+# Das Feld bleibt in voller Breite bestehen, ist aber für Touch-Eingaben "durchlässig".
+# Der Klick geht direkt an den Button darunter -> Volle Klickfläche, keine Tastatur!
 st.markdown(
     f"""
     <style>
         @media (max-width: 768px) {{
             div[data-testid="stSelectbox"] input {{
-                display: none !important;
+                pointer-events: none !important;
+                user-select: none !important;
             }}
         }}
     </style>
