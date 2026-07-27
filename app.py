@@ -116,65 +116,52 @@ def get_pool_length(meet_id: str) -> str:
         pass
     return "LCM"
 
-def check_event_has_year(event_url: str, target_year: int) -> bool:
-    """Prüft vorab schnell, ob ein Bewerb den Jahrgang überhaupt im Programm hat."""
-    try:
-        response = requests.get(event_url, headers=HTTP_HEADERS, timeout=5)
-        response.raise_for_status()
-        if str(target_year) in response.text:
-            return True
-    except requests.RequestException:
-        pass
-    return False
-
-def scrape_event_for_year(event_url: str, target_year: int, pool_length: str) -> Dict:
+def scrape_event_for_year(event_url: str, target_year: int, pool_length: str) -> List[Dict]:
     try:
         response = requests.get(event_url, headers=HTTP_HEADERS, timeout=10)
         response.raise_for_status()
     except requests.RequestException:
-        return {"has_target_year": False, "results": []}
+        return []
     
     soup = BeautifulSoup(response.text, 'html.parser')
     selected_option = soup.find('option', selected=True)
     discipline_name = selected_option.get_text(strip=True) if selected_option else "Unbekannter Bewerb"
     
     if any(x in discipline_name.lower() for x in ["staffel", "relay", "4x"]):
-        return {"has_target_year": False, "results": []}
+        return []
         
     is_male = re.search(r'\b(männlich|men|herren|knaben|buben)\b', discipline_name.lower())
     gender = "m" if is_male else "w"
-    
     results = []
-    has_year = False
     
     rows = soup.find_all('div', class_=re.compile(r'myresults_content_divtablerow_(odd|even)'))
     for row in rows:
         text_content = row.get_text(separator='|', strip=True)
         parts = [p.strip() for p in text_content.split('|') if p.strip()]
         
-        if any(str(target_year) in part for part in parts):
-            has_year = True
-            name = parts[1] if len(parts) > 1 else "Unbekannt"
-            time_str = "00:00.00"
-            for part in parts:
-                if re.match(r'^(\d{1,2}:)?\d{1,2}[.,]\d{2}$', part):
-                    time_str = part.replace(",", ".")
-                    break
+        if not any(str(target_year) in part for part in parts):
+            continue
             
-            points = calculate_points(time_str, discipline_name, gender, pool_length)
-            if points > 0:
-                results.append({
-                    "Name": name, "Jahrgang": target_year, "Geschlecht": gender,
-                    "Bewerb": discipline_name, "Zeit": time_str, "Punkte": points
-                })
-                
-    return {"has_target_year": has_year, "results": results}
+        name = parts[1] if len(parts) > 1 else "Unbekannt"
+        time_str = "00:00.00"
+        for part in parts:
+            if re.match(r'^(\d{1,2}:)?\d{1,2}[.,]\d{2}$', part):
+                time_str = part.replace(",", ".")
+                break
+        
+        points = calculate_points(time_str, discipline_name, gender, pool_length)
+        if points > 0:
+            results.append({
+                "Name": name, "Jahrgang": target_year, "Geschlecht": gender,
+                "Bewerb": discipline_name, "Zeit": time_str, "Punkte": points
+            })
+    return results
 
 # ==============================================================================
 # 3. STREAMLIT UI & AUSFÜHRUNG
 # ==============================================================================
 st.title("🏊 Swim-Points Tracker")
-st.markdown("Live-Rangliste nach AQUA-Punkten für Meisterschaften.")
+st.markdown("Live-Rangliste nach AQUA-Punkten (Best of X-1 Regelung).")
 
 col1, col2 = st.columns(2)
 with col1: 
@@ -182,19 +169,7 @@ with col1:
 with col2: 
     year_input = st.selectbox("Jahrgang", [2015, 2014, 2013, 2012], index=1)
 
-# Vorab-Prüfung der möglichen Bewerbe, sobald ID oder Jahrgang geändert werden
-if meet_id_input:
-    with st.spinner("Ermittle mögliche Bewerbe im Programm..."):
-        all_urls = get_all_event_urls(meet_id_input)
-        if all_urls:
-            # Schneller Check, in wie vielen URLs der Jahrgang überhaupt vorkommt
-            possible_events_count = 0
-            for u in all_urls:
-                if check_event_has_year(u, year_input):
-                    possible_events_count += 1
-            st.info(f"📌 **Jahrgang {year_input}** — **{possible_events_count} Bewerbe** im Gesamtprogramm möglich.")
-        else:
-            possible_events_count = 0
+st.info(f"ℹ️ **Modus:** Sobald du auf Abrufen klickst, lädt das Skript die Daten, ermittelt automatisch die echten Bewerbe für Jg. {year_input} und wendet die Best-of-(X-1)-Wertung an.")
 
 if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True):
     pool_length_code = get_pool_length(meet_id_input)
@@ -211,17 +186,11 @@ if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True
         progress_text.text(f"0/{len(urls)} Bewerbe verarbeitet...")
         
         all_results = []
-        completed_events_with_category = 0 
-        
         with ThreadPoolExecutor(max_workers=10) as executor:
             futures = [executor.submit(scrape_event_for_year, url, year_input, pool_length_code) for url in urls]
             for idx, future in enumerate(futures, 1):
-                data = future.result()
-                if data["has_target_year"]:
-                    completed_events_with_category += 1
-                if data["results"]:
-                    all_results.extend(data["results"])
-                    
+                res = future.result()
+                if res: all_results.extend(res)
                 progress_bar.progress(idx / len(urls))
                 progress_text.text(f"{idx}/{len(urls)} Bewerbe verarbeitet...")
                 
@@ -230,40 +199,41 @@ if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True
         else:
             df_raw = pd.DataFrame(all_results)
             
-            def get_live_score(pts_series, total_evt, athlete_starts):
-                if athlete_starts >= total_evt and total_evt > 1:
-                    return pts_series.nlargest(total_evt - 1).sum()
-                else:
-                    return pts_series.sum()
-
             for gender_val, gender_name in [("m", "Herren"), ("w", "Damen")]:
                 df_gender = df_raw[df_raw['Geschlecht'] == gender_val]
                 if df_gender.empty: continue
                 
-                # Wir nehmen die Maximalanzahl der laut Programm möglichen Bewerbe als Basis
-                target_total_events = possible_events_count if possible_events_count > 0 else completed_events_with_category
+                # Echte Anzahl der einzigartigen Bewerbe, die für DIESES Geschlecht in diesem Jahrgang stattfanden (z.B. 6)
+                total_events = df_gender['Bewerb'].nunique()
+                scored_events = max(1, total_events - 1)
                 
+                def get_live_score(pts_series, starts_count):
+                    # Wenn alle Bewerbe geschwommen wurden, gilt Best of X-1
+                    if starts_count >= total_events and total_events > 1:
+                        return pts_series.nlargest(scored_events).sum()
+                    else:
+                        return pts_series.sum()
+
                 df_grouped = df_gender.groupby('Name').agg(
-                    Gesamtpunkte=('Punkte', lambda x: get_live_score(x, target_total_events, len(x))),
+                    Gesamtpunkte=('Punkte', lambda x: get_live_score(x, len(x))),
                     Anzahl_Starts=('Bewerb', 'count')
                 ).reset_index()
                 
                 df_sorted = df_grouped.sort_values(by='Gesamtpunkte', ascending=False).reset_index(drop=True)
                 
-                st.subheader(f"🏆 {gender_name} - Jg. {year_input} (Bewerbe im System: {completed_events_with_category}/{target_total_events})")
+                st.subheader(f"🏆 {gender_name} - Jg. {year_input} ({total_events} Bewerbe im Programm)")
                 
                 for idx, row in df_sorted.iterrows():
                     name = row['Name']
                     pts = row['Gesamtpunkte']
                     starts = row['Anzahl_Starts']
                     
-                    has_dropped_result = (starts >= target_total_events and target_total_events > 1)
-                    scored_events = target_total_events - 1 if has_dropped_result else starts
+                    has_dropped_result = (starts >= total_events and total_events > 1)
                     
                     if has_dropped_result:
                         status_icon = f"🏁 Finale Wertung (Best of {scored_events})"
                     else:
-                        status_icon = f"⏱️ Zwischenstand ({starts}/{target_total_events} Bewerbe)"
+                        status_icon = f"⏱️ Zwischenstand ({starts}/{total_events} Bewerbe)"
                     
                     with st.expander(f"**{idx+1}. {name}** — {pts} Pkt. | {starts} Starts ({status_icon})"):
                         athlete_events = df_gender[df_gender['Name'] == name].sort_values(by='Punkte', ascending=False)
