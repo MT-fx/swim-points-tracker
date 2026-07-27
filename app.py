@@ -116,8 +116,18 @@ def get_pool_length(meet_id: str) -> str:
         pass
     return "LCM"
 
+def check_event_has_year(event_url: str, target_year: int) -> bool:
+    """Prüft vorab schnell, ob ein Bewerb den Jahrgang überhaupt im Programm hat."""
+    try:
+        response = requests.get(event_url, headers=HTTP_HEADERS, timeout=5)
+        response.raise_for_status()
+        if str(target_year) in response.text:
+            return True
+    except requests.RequestException:
+        pass
+    return False
+
 def scrape_event_for_year(event_url: str, target_year: int, pool_length: str) -> Dict:
-    """Scrapt einen Bewerb und gibt Metadaten + gefundene Ergebnisse zurück."""
     try:
         response = requests.get(event_url, headers=HTTP_HEADERS, timeout=10)
         response.raise_for_status()
@@ -172,7 +182,19 @@ with col1:
 with col2: 
     year_input = st.selectbox("Jahrgang", [2015, 2014, 2013, 2012], index=1)
 
-st.info("ℹ️ **Live-Modus:** Das Skript erkennt automatisch, wie viele Bewerbe für diesen Jahrgang im System existieren und bereits geschwommen wurden. Das Streichresultat (Best of X-1) greift erst, wenn alle Bewerbe abgeschlossen sind.")
+# Vorab-Prüfung der möglichen Bewerbe, sobald ID oder Jahrgang geändert werden
+if meet_id_input:
+    with st.spinner("Ermittle mögliche Bewerbe im Programm..."):
+        all_urls = get_all_event_urls(meet_id_input)
+        if all_urls:
+            # Schneller Check, in wie vielen URLs der Jahrgang überhaupt vorkommt
+            possible_events_count = 0
+            for u in all_urls:
+                if check_event_has_year(u, year_input):
+                    possible_events_count += 1
+            st.info(f"📌 **Jahrgang {year_input}** — **{possible_events_count} Bewerbe** im Gesamtprogramm möglich.")
+        else:
+            possible_events_count = 0
 
 if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True):
     pool_length_code = get_pool_length(meet_id_input)
@@ -189,14 +211,14 @@ if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True
         progress_text.text(f"0/{len(urls)} Bewerbe verarbeitet...")
         
         all_results = []
-        total_events_with_category = 0 
+        completed_events_with_category = 0 
         
         with ThreadPoolExecutor(max_workers=10) as executor:
             futures = [executor.submit(scrape_event_for_year, url, year_input, pool_length_code) for url in urls]
             for idx, future in enumerate(futures, 1):
                 data = future.result()
                 if data["has_target_year"]:
-                    total_events_with_category += 1
+                    completed_events_with_category += 1
                 if data["results"]:
                     all_results.extend(data["results"])
                     
@@ -218,29 +240,30 @@ if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True
                 df_gender = df_raw[df_raw['Geschlecht'] == gender_val]
                 if df_gender.empty: continue
                 
-                gender_total_events = total_events_with_category
+                # Wir nehmen die Maximalanzahl der laut Programm möglichen Bewerbe als Basis
+                target_total_events = possible_events_count if possible_events_count > 0 else completed_events_with_category
                 
                 df_grouped = df_gender.groupby('Name').agg(
-                    Gesamtpunkte=('Punkte', lambda x: get_live_score(x, gender_total_events, len(x))),
+                    Gesamtpunkte=('Punkte', lambda x: get_live_score(x, target_total_events, len(x))),
                     Anzahl_Starts=('Bewerb', 'count')
                 ).reset_index()
                 
                 df_sorted = df_grouped.sort_values(by='Gesamtpunkte', ascending=False).reset_index(drop=True)
                 
-                st.subheader(f"🏆 {gender_name} - Jg. {year_input} (Bewerbe im System: {gender_total_events})")
+                st.subheader(f"🏆 {gender_name} - Jg. {year_input} (Bewerbe im System: {completed_events_with_category}/{target_total_events})")
                 
                 for idx, row in df_sorted.iterrows():
                     name = row['Name']
                     pts = row['Gesamtpunkte']
                     starts = row['Anzahl_Starts']
                     
-                    has_dropped_result = (starts >= gender_total_events and gender_total_events > 1)
-                    scored_events = gender_total_events - 1 if has_dropped_result else starts
+                    has_dropped_result = (starts >= target_total_events and target_total_events > 1)
+                    scored_events = target_total_events - 1 if has_dropped_result else starts
                     
                     if has_dropped_result:
                         status_icon = f"🏁 Finale Wertung (Best of {scored_events})"
                     else:
-                        status_icon = f"⏱️ Zwischenstand ({starts}/{gender_total_events} Bewerbe)"
+                        status_icon = f"⏱️ Zwischenstand ({starts}/{target_total_events} Bewerbe)"
                     
                     with st.expander(f"**{idx+1}. {name}** — {pts} Pkt. | {starts} Starts ({status_icon})"):
                         athlete_events = df_gender[df_gender['Name'] == name].sort_values(by='Punkte', ascending=False)
