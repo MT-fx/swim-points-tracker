@@ -160,16 +160,27 @@ def scrape_event_for_year(event_url: str, target_year: int, pool_length: str) ->
 # ==============================================================================
 # 3. STREAMLIT UI & AUSFÜHRUNG
 # ==============================================================================
-st.title("🏊 Swim-Points Tracker")
-st.markdown("Live-Rangliste nach AQUA-Punkten (Best of X-1 Regelung).")
+
+# Layout für Titel und Logo
+header_col1, header_col2 = st.columns([3, 1])
+
+with header_col1:
+    st.title("🏊 Swim-Points Tracker")
+    st.markdown("Live-Rangliste nach AQUA-Punkten (Best of X-1 Regelung).")
+
+with header_col2:
+    try:
+        st.image("logo_sum_blau_gelb.png", use_container_width=True)
+    except Exception:
+        pass # Ignoriert den Fehler unauffällig, falls das Bild fehlt
+
+st.divider()
 
 col1, col2 = st.columns(2)
 with col1: 
     meet_id_input = st.text_input("Wettkampf-ID", value="2355")
 with col2: 
     year_input = st.selectbox("Jahrgang", [2015, 2014, 2013, 2012], index=1)
-
-st.info("ℹ️ **Modus:** Klicke auf Abrufen, um die Rangliste zu laden. Das Skript zeigt dir direkt an, wie viele Bewerbe für den Jahrgang im System verfügbar sind.")
 
 if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True):
     pool_length_code = get_pool_length(meet_id_input)
@@ -220,7 +231,6 @@ if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True
                 
                 df_sorted = df_grouped.sort_values(by='Gesamtpunkte', ascending=False).reset_index(drop=True)
                 
-                # 💡 NEU: Prominente Info direkt über der Rangliste, wie viele Bewerbe möglich waren
                 st.markdown(f"### 🏆 {gender_name} - Jg. {year_input}")
                 st.info(f"📊 Für den Jahrgang {year_input} gab es in dieser Kategorie insgesamt **{total_events} mögliche Bewerbe**.")
                 
