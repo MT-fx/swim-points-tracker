@@ -328,3 +328,10 @@ if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True
                                     st.markdown(f"**{ev_row['Bewerb']}** : {ev_row['Zeit']} ({ev_row['Punkte']} Pkt.)")
                     
                     st.divider()
+
+
+# ==============================================================================
+# FOOTER / LEGAL DISCLAIMER
+# ==============================================================================
+st.divider()
+st.caption("⚖️ **Haftungsausschluss:** Die hier angezeigten Ergebnisse werden automatisiert von *myresults.eu* abgerufen und basieren auf den aktuellen AQUA-Punktetabellen. Es wird keine Garantie oder Haftung für die Richtigkeit, Vollständigkeit und Aktualität der dargestellten Daten und Berechnungen übernommen. Technische Fehler oder Verzögerungen bei der Datenübertragung sind vorbehalten.")
