@@ -216,10 +216,30 @@ try:
 except Exception:
     img_html = ''
 
-# Fester HTML-Container: Zwingt Titel und Logo auf einer Zeile nebeneinander
+# --- CSS HACK: Tastatur blockieren & Top-Menü komplett verstecken ---
 st.markdown(
     f"""
-    <div style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; margin-bottom: 15px; gap: 10px;">
+    <style>
+        /* Versteckt die Streamlit-Kopfzeile (Fork, GitHub, 3 Punkte) komplett */
+        header[data-testid="stHeader"] {{
+            display: none !important;
+        }}
+        
+        /* Zur Sicherheit: Versteckt auch das alte MainMenu-Element */
+        #MainMenu {{
+            visibility: hidden !important;
+        }}
+        
+        /* Macht das Dropdown für Touch-Eingaben "durchlässig", damit die Tastatur zu bleibt */
+        @media (max-width: 768px) {{
+            div[data-testid="stSelectbox"] input {{
+                pointer-events: none !important;
+                user-select: none !important;
+            }}
+        }}
+    </style>
+    
+    <div style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; margin-bottom: 15px; gap: 10px; margin-top: 20px;">
         <div style="flex: 1;">
             <h1 style="margin: 0; padding: 0; line-height: 1.1; font-size: 2.2rem; font-weight: 700;">
                 🏊 Swim-<br>Points<br>Tracker
