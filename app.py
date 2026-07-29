@@ -119,7 +119,7 @@ def get_meets_list() -> Dict[str, str]:
         except Exception:
             pass
 
-    # EXACT 3 zukünftige und 5 vergangene, damit wir unter dem 10-Optionen-Limit von Streamlit bleiben!
+    # Maximal 9 Optionen gesamt (damit die Suchfunktion & Tastatur auf Mobile deaktiviert bleibt)
     fetch_events_from_url("https://myresults.eu/de-AT/Meets/Today-Upcoming", "🟢", 3)
     fetch_events_from_url("https://myresults.eu/de-AT/Meets/Recent", "🗓️", 5)
         
@@ -208,7 +208,6 @@ def scrape_event_for_year(event_url: str, target_year: int, pool_length: str) ->
 # 3. STREAMLIT UI & AUSFÜHRUNG
 # ==============================================================================
 
-# Versuche das Logo einzulesen, um es direkt ins HTML einzubetten
 try:
     with open("logo_sum_blau_gelb.png", "rb") as img_file:
         logo_base64 = base64.b64encode(img_file.read()).decode()
@@ -220,22 +219,15 @@ except Exception:
 st.markdown(
     f"""
     <style>
-        /* Versteckt die Streamlit-Kopfzeile (Fork, GitHub, 3 Punkte) komplett */
         header[data-testid="stHeader"] {{
             display: none !important;
         }}
-        
-        /* Zur Sicherheit: Versteckt auch das alte MainMenu-Element */
         #MainMenu {{
             visibility: hidden !important;
         }}
-        
-        /* Verringert den riesigen weißen Standard-Abstand von Streamlit ganz oben */
         .block-container {{
             padding-top: 2rem !important;
         }}
-        
-        /* Macht das Dropdown für Touch-Eingaben "durchlässig", damit die Tastatur zu bleibt */
         @media (max-width: 768px) {{
             div[data-testid="stSelectbox"] input {{
                 pointer-events: none !important;
@@ -254,7 +246,7 @@ st.markdown(
             {img_html}
         </div>
     </div>
-    <p style="margin-top: 0; margin-bottom: 0;">Live-Rangliste nach AQUA-Punkten (Best of X-1 Regelung).</p>
+    <p style="margin-top: 0; margin-bottom: 0;">Live-Rangliste nach AQUA-Punkten.</p>
     """,
     unsafe_allow_html=True
 )
@@ -313,10 +305,23 @@ if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True
                     if df_gender.empty: continue
                     
                     total_events = df_gender['Bewerb'].nunique()
-                    scored_events = max(1, total_events - 1)
+                    
+                    # --- SONDERREGELUNG FÜR WETTKAMPF 2356 (ÖM Nachwuchs) ---
+                    is_special_meet = (str(meet_id_input).strip() == "2356")
+                    if is_special_meet:
+                        if int(year_input) in [2014, 2015]:
+                            scored_events = 6
+                        elif int(year_input) in [2012, 2013]:
+                            scored_events = 5
+                        else:
+                            scored_events = max(1, total_events - 1)
+                    else:
+                        # Standardregel: Best of X-1
+                        scored_events = max(1, total_events - 1)
                     
                     def get_live_score(pts_series, starts_count):
-                        if starts_count >= total_events and total_events > 1:
+                        # Wenn jemand mehr Bewerbe geschwommen ist, als gewertet werden, nimm die höchsten Punkte
+                        if starts_count > scored_events:
                             return pts_series.nlargest(scored_events).sum()
                         else:
                             return pts_series.sum()
@@ -329,19 +334,24 @@ if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True
                     df_sorted = df_grouped.sort_values(by='Gesamtpunkte', ascending=False).reset_index(drop=True)
                     
                     st.markdown(f"### 🏆 {gender_name} - Jg. {year_input}")
-                    st.info(f"📊 Für den Jahrgang {year_input} gab es in dieser Kategorie insgesamt **{total_events} mögliche Bewerbe**.")
+                    
+                    # Info-Box abhängig vom Wettkampf
+                    if is_special_meet:
+                        st.info(f"📊 ÖM-Regel aktiv: Es werden die besten **{scored_events} Resultate** zusammengezählt.")
+                    else:
+                        st.info(f"📊 Für den Jahrgang {year_input} gab es insgesamt **{total_events} mögliche Bewerbe** (Best of {scored_events}).")
                     
                     for idx, row in df_sorted.iterrows():
                         name = row['Name']
                         pts = row['Gesamtpunkte']
                         starts = row['Anzahl_Starts']
                         
-                        has_dropped_result = (starts >= total_events and total_events > 1)
+                        has_dropped_result = (starts > scored_events)
                         
                         if has_dropped_result:
-                            status_icon = f"🏁 Finale Wertung (Best of {scored_events} von {total_events})"
+                            status_icon = f"🏁 Wertung (Best of {scored_events})"
                         else:
-                            status_icon = f"⏱️ Zwischenstand ({starts}/{total_events} Bewerbe)"
+                            status_icon = f"⏱️ Zwischenstand ({starts}/{scored_events} gewertet)"
                         
                         with st.expander(f"**{idx+1}. {name}** — {pts} Pkt. | {starts} Starts ({status_icon})"):
                             athlete_events = df_gender[df_gender['Name'] == name].sort_values(by='Punkte', ascending=False)
@@ -354,9 +364,7 @@ if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True
                     
                     st.divider()
 
-
 # ==============================================================================
 # FOOTER / LEGAL DISCLAIMER
 # ==============================================================================
-st.divider()
 st.caption("⚖️ **Haftungsausschluss:** Die hier angezeigten Ergebnisse werden automatisiert von *myresults.eu* abgerufen und basieren auf den aktuellen AQUA-Punktetabellen. Es wird keine Garantie oder Haftung für die Richtigkeit, Vollständigkeit und Aktualität der dargestellten Daten und Berechnungen übernommen. Technische Fehler oder Verzögerungen bei der Datenübertragung sind vorbehalten.")
