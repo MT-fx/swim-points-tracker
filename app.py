@@ -10,7 +10,7 @@ from typing import List, Dict
 # ==============================================================================
 # 1. KONFIGURATION & FINA-PUNKTE
 # ==============================================================================
-st.set_page_config(page_title="Swim-Points Tracker", page_icon="🏊", layout="centered")
+st.set_page_config(page_title="ÖM Nachwuchs Tracker", page_icon="🏊", layout="centered")
 
 HTTP_HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -79,52 +79,6 @@ def calculate_points(time_str: str, discipline: str, gender: str, pool_length: s
 # ==============================================================================
 # 2. SCRAPING-LOGIK
 # ==============================================================================
-@st.cache_data(show_spinner=False, ttl=1800)
-def get_meets_list() -> Dict[str, str]:
-    meets = {}
-    
-    def fetch_events_from_url(url: str, icon: str, max_items: int):
-        try:
-            resp = requests.get(url, headers=HTTP_HEADERS, timeout=10)
-            soup = BeautifulSoup(resp.text, 'html.parser')
-            count = 0
-            
-            for a_tag in soup.find_all('a', href=re.compile(r'/Meets/[^/]+/(\d+)')):
-                href = a_tag.get('href', '')
-                match = re.search(r'/Meets/[^/]+/(\d+)', href)
-                
-                if match:
-                    meet_id = match.group(1)
-                    name = a_tag.get_text(strip=True)
-                    
-                    if not name or name.lower() in ["info", "ergebnisse", "meldungen", "live", "overview", "details"]:
-                        continue
-                        
-                    datum = ""
-                    parent_tr = a_tag.find_parent('tr')
-                    if parent_tr:
-                        tds = parent_tr.find_all('td')
-                        if len(tds) > 0:
-                            datum_text = tds[0].get_text(strip=True)
-                            if re.match(r'^\d{2}\.\d{2}\.', datum_text):
-                                datum = f"{datum_text} | "
-                                
-                    display_name = f"{icon} {datum}{name[:50]}"
-                    
-                    if meet_id not in meets.values():
-                        meets[display_name] = meet_id
-                        count += 1
-                        if count >= max_items:
-                            break
-        except Exception:
-            pass
-
-    # Maximal 9 Optionen gesamt (damit die Suchfunktion & Tastatur auf Mobile deaktiviert bleibt)
-    fetch_events_from_url("https://myresults.eu/de-AT/Meets/Today-Upcoming", "🟢", 3)
-    fetch_events_from_url("https://myresults.eu/de-AT/Meets/Recent", "🗓️", 5)
-        
-    return meets
-
 @st.cache_data(show_spinner=False, ttl=60)
 def get_all_event_urls(meet_id: str) -> List[str]:
     base_url = f"https://myresults.eu/de-AT/Meets/Recent/{meet_id}/Results"
@@ -208,6 +162,9 @@ def scrape_event_for_year(event_url: str, target_year: int, pool_length: str) ->
 # 3. STREAMLIT UI & AUSFÜHRUNG
 # ==============================================================================
 
+# Feste Wettkampf-ID für die ÖM Nachwuchs
+MEET_ID = "2356"
+
 try:
     with open("logo_sum_blau_gelb.png", "rb") as img_file:
         logo_base64 = base64.b64encode(img_file.read()).decode()
@@ -215,7 +172,7 @@ try:
 except Exception:
     img_html = ''
 
-# --- CSS HACK: Tastatur blockieren, Top-Menü verstecken & Abstand oben verringern ---
+# --- CSS: Top-Menü verstecken & Abstand oben verringern ---
 st.markdown(
     f"""
     <style>
@@ -228,141 +185,105 @@ st.markdown(
         .block-container {{
             padding-top: 2rem !important;
         }}
-        @media (max-width: 768px) {{
-            div[data-testid="stSelectbox"] input {{
-                pointer-events: none !important;
-                user-select: none !important;
-            }}
-        }}
     </style>
     
     <div style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; margin-bottom: 15px; gap: 10px;">
         <div style="flex: 1;">
-            <h1 style="margin: 0; padding: 0; line-height: 1.1; font-size: 2.2rem; font-weight: 700;">
-                🏊 Swim-<br>Points<br>Tracker
+            <h1 style="margin: 0; padding: 0; line-height: 1.1; font-size: 2.0rem; font-weight: 700;">
+                🏊 ÖM Nachwuchs<br>2026<br><span style="font-size: 1.2rem; color: #a0a0a0; font-weight: 400;">Live-Tracker</span>
             </h1>
         </div>
         <div style="flex-shrink: 0; width: 120px;">
             {img_html}
         </div>
     </div>
-    <p style="margin-top: 0; margin-bottom: 0;">Live-Rangliste nach AQUA-Punkten.</p>
+    <p style="margin-top: 0; margin-bottom: 0;">Inoffizielle Live-Rangliste nach AQUA-Punkten für den Wettkampf 2356.</p>
     """,
     unsafe_allow_html=True
 )
 
 st.divider()
 
-col1, col2 = st.columns(2)
-with col1:
-    recent_meets = get_meets_list()
-    
-    options = ["✍️ Wettkampf-ID manuell eingeben..."] + list(recent_meets.keys())
-    selection = st.selectbox("Wettkampf auswählen", options)
-    
-    if selection == "✍️ Wettkampf-ID manuell eingeben...":
-        meet_id_input = st.text_input("Wettkampf-ID", value="2355")
-    else:
-        meet_id_input = recent_meets[selection]
-        st.info(f"🆔 **Ausgewählte Wettkampf-ID:** {meet_id_input}")
-
-with col2: 
-    year_input = st.selectbox("Jahrgang", [2015, 2014, 2013, 2012], index=1)
+# Nur noch die Abfrage des Jahrgangs ist notwendig
+year_input = st.selectbox("Jahrgang auswählen", [2015, 2014, 2013, 2012], index=1)
 
 if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True):
-    if not str(meet_id_input).strip():
-        st.error("❌ Bitte gib eine gültige Wettkampf-ID ein.")
+    pool_length_code = get_pool_length(MEET_ID)
+    pool_display = "50m (Langbahn - LCM)" if pool_length_code == "LCM" else "25m (Kurzbahn - SCM)"
+    st.success(f"📍 **Erkannte Bahnlänge:** {pool_display}")
+    
+    urls = get_all_event_urls(MEET_ID)
+    
+    if not urls:
+        st.error(f"❌ Keine Bewerbe gefunden. Bitte prüfen, ob Ergebnisse für Wettkampf {MEET_ID} online sind.")
     else:
-        pool_length_code = get_pool_length(str(meet_id_input))
-        pool_display = "50m (Langbahn - LCM)" if pool_length_code == "LCM" else "25m (Kurzbahn - SCM)"
-        st.success(f"📍 **Erkannte Bahnlänge:** {pool_display}")
+        progress_text = st.empty()
+        progress_bar = st.progress(0)
+        progress_text.text(f"0/{len(urls)} Bewerbe verarbeitet...")
         
-        urls = get_all_event_urls(str(meet_id_input))
-        
-        if not urls:
-            st.error("❌ Keine Bewerbe gefunden. Bitte Wettkampf-ID prüfen.")
-        else:
-            progress_text = st.empty()
-            progress_bar = st.progress(0)
-            progress_text.text(f"0/{len(urls)} Bewerbe verarbeitet...")
-            
-            all_results = []
-            with ThreadPoolExecutor(max_workers=10) as executor:
-                futures = [executor.submit(scrape_event_for_year, url, year_input, pool_length_code) for url in urls]
-                for idx, future in enumerate(futures, 1):
-                    res = future.result()
-                    if res: all_results.extend(res)
-                    progress_bar.progress(idx / len(urls))
-                    progress_text.text(f"{idx}/{len(urls)} Bewerbe verarbeitet...")
-                    
-            if not all_results:
-                st.warning(f"Keine Ergebnisse für Jahrgang {year_input} in diesem Wettkampf gefunden.")
-            else:
-                df_raw = pd.DataFrame(all_results)
+        all_results = []
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(scrape_event_for_year, url, year_input, pool_length_code) for url in urls]
+            for idx, future in enumerate(futures, 1):
+                res = future.result()
+                if res: all_results.extend(res)
+                progress_bar.progress(idx / len(urls))
+                progress_text.text(f"{idx}/{len(urls)} Bewerbe verarbeitet...")
                 
-                for gender_val, gender_name in [("m", "Herren"), ("w", "Damen")]:
-                    df_gender = df_raw[df_raw['Geschlecht'] == gender_val]
-                    if df_gender.empty: continue
-                    
-                    total_events = df_gender['Bewerb'].nunique()
-                    
-                    # --- SONDERREGELUNG FÜR WETTKAMPF 2356 (ÖM Nachwuchs) ---
-                    is_special_meet = (str(meet_id_input).strip() == "2356")
-                    if is_special_meet:
-                        if int(year_input) in [2014, 2015]:
-                            scored_events = 6
-                        elif int(year_input) in [2012, 2013]:
-                            scored_events = 5
-                        else:
-                            scored_events = max(1, total_events - 1)
+        if not all_results:
+            st.warning(f"Keine Ergebnisse für Jahrgang {year_input} in diesem Wettkampf gefunden.")
+        else:
+            df_raw = pd.DataFrame(all_results)
+            
+            for gender_val, gender_name in [("m", "Herren"), ("w", "Damen")]:
+                df_gender = df_raw[df_raw['Geschlecht'] == gender_val]
+                if df_gender.empty: continue
+                
+                # --- SONDERREGELUNG FÜR WETTKAMPF 2356 (ÖM Nachwuchs) ---
+                if int(year_input) in [2014, 2015]:
+                    scored_events = 6
+                elif int(year_input) in [2012, 2013]:
+                    scored_events = 5
+                
+                def get_live_score(pts_series, starts_count):
+                    # Wenn jemand mehr Bewerbe geschwommen ist, als gewertet werden, nimm die höchsten Punkte
+                    if starts_count > scored_events:
+                        return pts_series.nlargest(scored_events).sum()
                     else:
-                        # Standardregel: Best of X-1
-                        scored_events = max(1, total_events - 1)
-                    
-                    def get_live_score(pts_series, starts_count):
-                        # Wenn jemand mehr Bewerbe geschwommen ist, als gewertet werden, nimm die höchsten Punkte
-                        if starts_count > scored_events:
-                            return pts_series.nlargest(scored_events).sum()
-                        else:
-                            return pts_series.sum()
+                        return pts_series.sum()
 
-                    df_grouped = df_gender.groupby('Name').agg(
-                        Gesamtpunkte=('Punkte', lambda x: get_live_score(x, len(x))),
-                        Anzahl_Starts=('Bewerb', 'count')
-                    ).reset_index()
+                df_grouped = df_gender.groupby('Name').agg(
+                    Gesamtpunkte=('Punkte', lambda x: get_live_score(x, len(x))),
+                    Anzahl_Starts=('Bewerb', 'count')
+                ).reset_index()
+                
+                df_sorted = df_grouped.sort_values(by='Gesamtpunkte', ascending=False).reset_index(drop=True)
+                
+                st.markdown(f"### 🏆 {gender_name} - Jg. {year_input}")
+                st.info(f"📊 ÖM-Regel aktiv: Es werden die besten **{scored_events} Resultate** zusammengezählt.")
+                
+                for idx, row in df_sorted.iterrows():
+                    name = row['Name']
+                    pts = row['Gesamtpunkte']
+                    starts = row['Anzahl_Starts']
                     
-                    df_sorted = df_grouped.sort_values(by='Gesamtpunkte', ascending=False).reset_index(drop=True)
+                    has_dropped_result = (starts > scored_events)
                     
-                    st.markdown(f"### 🏆 {gender_name} - Jg. {year_input}")
-                    
-                    # Info-Box abhängig vom Wettkampf
-                    if is_special_meet:
-                        st.info(f"📊 ÖM-Regel aktiv: Es werden die besten **{scored_events} Resultate** zusammengezählt.")
+                    if has_dropped_result:
+                        status_icon = f"🏁 Wertung (Best of {scored_events})"
                     else:
-                        st.info(f"📊 Für den Jahrgang {year_input} gab es insgesamt **{total_events} mögliche Bewerbe** (Best of {scored_events}).")
+                        status_icon = f"⏱️ Zwischenstand ({starts}/{scored_events} gewertet)"
                     
-                    for idx, row in df_sorted.iterrows():
-                        name = row['Name']
-                        pts = row['Gesamtpunkte']
-                        starts = row['Anzahl_Starts']
+                    with st.expander(f"**{idx+1}. {name}** — {pts} Pkt. | {starts} Starts ({status_icon})"):
+                        athlete_events = df_gender[df_gender['Name'] == name].sort_values(by='Punkte', ascending=False)
                         
-                        has_dropped_result = (starts > scored_events)
-                        
-                        if has_dropped_result:
-                            status_icon = f"🏁 Wertung (Best of {scored_events})"
-                        else:
-                            status_icon = f"⏱️ Zwischenstand ({starts}/{scored_events} gewertet)"
-                        
-                        with st.expander(f"**{idx+1}. {name}** — {pts} Pkt. | {starts} Starts ({status_icon})"):
-                            athlete_events = df_gender[df_gender['Name'] == name].sort_values(by='Punkte', ascending=False)
-                            
-                            for i, (_, ev_row) in enumerate(athlete_events.iterrows()):
-                                if has_dropped_result and i >= scored_events:
-                                    st.markdown(f"~~{ev_row['Bewerb']} : {ev_row['Zeit']} ({ev_row['Punkte']} Pkt.)~~ 📉 *Streichergebnis*")
-                                else:
-                                    st.markdown(f"**{ev_row['Bewerb']}** : {ev_row['Zeit']} ({ev_row['Punkte']} Pkt.)")
-                    
-                    st.divider()
+                        for i, (_, ev_row) in enumerate(athlete_events.iterrows()):
+                            if has_dropped_result and i >= scored_events:
+                                st.markdown(f"~~{ev_row['Bewerb']} : {ev_row['Zeit']} ({ev_row['Punkte']} Pkt.)~~ 📉 *Streichergebnis*")
+                            else:
+                                st.markdown(f"**{ev_row['Bewerb']}** : {ev_row['Zeit']} ({ev_row['Punkte']} Pkt.)")
+                
+                st.divider()
 
 # ==============================================================================
 # FOOTER / LEGAL DISCLAIMER
