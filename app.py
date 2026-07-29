@@ -216,7 +216,7 @@ try:
 except Exception:
     img_html = ''
 
-# --- CSS HACK: Tastatur blockieren & Top-Menü komplett verstecken ---
+# --- CSS HACK: Tastatur blockieren, Top-Menü verstecken & Abstand oben verringern ---
 st.markdown(
     f"""
     <style>
@@ -230,6 +230,11 @@ st.markdown(
             visibility: hidden !important;
         }}
         
+        /* Verringert den riesigen weißen Standard-Abstand von Streamlit ganz oben */
+        .block-container {{
+            padding-top: 2rem !important;
+        }}
+        
         /* Macht das Dropdown für Touch-Eingaben "durchlässig", damit die Tastatur zu bleibt */
         @media (max-width: 768px) {{
             div[data-testid="stSelectbox"] input {{
@@ -239,7 +244,7 @@ st.markdown(
         }}
     </style>
     
-    <div style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; margin-bottom: 15px; gap: 10px; margin-top: 20px;">
+    <div style="display: flex; flex-direction: row; align-items: center; justify-content: space-between; margin-bottom: 15px; gap: 10px;">
         <div style="flex: 1;">
             <h1 style="margin: 0; padding: 0; line-height: 1.1; font-size: 2.2rem; font-weight: 700;">
                 🏊 Swim-<br>Points<br>Tracker
