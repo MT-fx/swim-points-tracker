@@ -133,8 +133,16 @@ def scrape_event_for_year(event_url: str, target_year: int, pool_length: str) ->
         
     is_male = re.search(r'\b(männlich|men|herren|knaben|buben)\b', discipline_name.lower())
     gender = "m" if is_male else "w"
-    results = []
     
+    # NEU: Wir extrahieren den reinen Grundbewerb (z.B. "100m Freistil"), ohne Zusätze wie "Vorlauf"
+    course_data = BASE_TIMES.get(pool_length, BASE_TIMES["LCM"]).get(gender, {})
+    base_bewerb = discipline_name
+    for key in sorted(course_data.keys(), key=len, reverse=True):
+        if key.lower() in discipline_name.lower():
+            base_bewerb = key
+            break
+
+    results = []
     rows = soup.find_all('div', class_=re.compile(r'myresults_content_divtablerow_(odd|even)'))
     for row in rows:
         text_content = row.get_text(separator='|', strip=True)
@@ -153,8 +161,13 @@ def scrape_event_for_year(event_url: str, target_year: int, pool_length: str) ->
         points = calculate_points(time_str, discipline_name, gender, pool_length)
         if points > 0:
             results.append({
-                "Name": name, "Jahrgang": target_year, "Geschlecht": gender,
-                "Bewerb": discipline_name, "Zeit": time_str, "Punkte": points
+                "Name": name, 
+                "Jahrgang": target_year, 
+                "Geschlecht": gender,
+                "Bewerb": discipline_name, 
+                "Grundbewerb": base_bewerb,  # NEU: Wird für den Filter gespeichert
+                "Zeit": time_str, 
+                "Punkte": points
             })
     return results
 
@@ -204,7 +217,6 @@ st.markdown(
 
 st.divider()
 
-# Nur noch die Abfrage des Jahrgangs ist notwendig
 year_input = st.selectbox("Jahrgang auswählen", [2015, 2014, 2013, 2012], index=1)
 
 if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True):
@@ -239,14 +251,22 @@ if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True
                 df_gender = df_raw[df_raw['Geschlecht'] == gender_val]
                 if df_gender.empty: continue
                 
-                # --- SONDERREGELUNG FÜR WETTKAMPF 2356 (ÖM Nachwuchs) ---
+                # --- VORLAUF / FINALE BEREINIGUNG (Nur für 2012 & 2013) ---
+                if int(year_input) in [2012, 2013]:
+                    # Wir sortieren nach Punkten (höchste zuerst) und werfen dann alle 
+                    # schwächeren Starts derselben Strecke für diesen Schwimmer raus.
+                    df_gender = df_gender.sort_values('Punkte', ascending=False)
+                    df_gender = df_gender.drop_duplicates(subset=['Name', 'Grundbewerb'], keep='first')
+                
+                # Wir zählen jetzt die Grundbewerbe, um die echte Anzahl an Disziplinen zu erhalten
+                total_events = df_gender['Grundbewerb'].nunique()
+                
                 if int(year_input) in [2014, 2015]:
                     scored_events = 6
                 elif int(year_input) in [2012, 2013]:
                     scored_events = 5
                 
                 def get_live_score(pts_series, starts_count):
-                    # Wenn jemand mehr Bewerbe geschwommen ist, als gewertet werden, nimm die höchsten Punkte
                     if starts_count > scored_events:
                         return pts_series.nlargest(scored_events).sum()
                     else:
@@ -260,7 +280,7 @@ if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True
                 df_sorted = df_grouped.sort_values(by='Gesamtpunkte', ascending=False).reset_index(drop=True)
                 
                 st.markdown(f"### 🏆 {gender_name} - Jg. {year_input}")
-                st.info(f"📊 ÖM-Regel aktiv: Es werden die besten **{scored_events} Resultate** zusammengezählt.")
+                st.info(f"📊 ÖM-Regel aktiv: Es werden die besten **{scored_events} Resultate** aus {total_events} möglichen Disziplinen gewertet.")
                 
                 for idx, row in df_sorted.iterrows():
                     name = row['Name']
