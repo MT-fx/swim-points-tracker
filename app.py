@@ -21,6 +21,7 @@ BASE_TIMES = {
     "SCM": {
         "m": {
             "50m Freistil": 19.90, "100m Freistil": 44.84, "200m Freistil": 98.61, "400m Freistil": 212.25,
+            "800m Freistil": 440.46, "1500m Freistil": 846.88,
             "50m Rücken": 22.11, "100m Rücken": 48.33, "200m Rücken": 105.63,
             "50m Brust": 24.95, "100m Brust": 55.28, "200m Brust": 120.16,
             "50m Schmetterling": 21.32, "100m Schmetterling": 47.71, "200m Schmetterling": 106.85,
@@ -28,6 +29,7 @@ BASE_TIMES = {
         },
         "w": {
             "50m Freistil": 22.83, "100m Freistil": 50.25, "200m Freistil": 110.31, "400m Freistil": 230.25,
+            "800m Freistil": 477.42, "1500m Freistil": 908.24,
             "50m Rücken": 25.23, "100m Rücken": 54.02, "200m Rücken": 118.04,
             "50m Brust": 28.37, "100m Brust": 62.36, "200m Brust": 132.50,
             "50m Schmetterling": 23.94, "100m Schmetterling": 52.71, "200m Schmetterling": 119.32,
@@ -37,6 +39,7 @@ BASE_TIMES = {
     "LCM": {
         "m": {
             "50m Freistil": 20.91, "100m Freistil": 46.40, "200m Freistil": 102.00, "400m Freistil": 219.96,
+            "800m Freistil": 452.12, "1500m Freistil": 871.02,
             "50m Rücken": 23.55, "100m Rücken": 51.60, "200m Rücken": 111.92,
             "50m Brust": 25.95, "100m Brust": 56.88, "200m Brust": 125.48,
             "50m Schmetterling": 22.27, "100m Schmetterling": 49.45, "200m Schmetterling": 110.34,
@@ -44,6 +47,7 @@ BASE_TIMES = {
         },
         "w": {
             "50m Freistil": 23.61, "100m Freistil": 51.71, "200m Freistil": 112.23, "400m Freistil": 234.18,
+            "800m Freistil": 484.79, "1500m Freistil": 920.48,
             "50m Rücken": 26.86, "100m Rücken": 57.13, "200m Rücken": 123.14,
             "50m Brust": 29.16, "100m Brust": 64.13, "200m Brust": 137.55,
             "50m Schmetterling": 24.43, "100m Schmetterling": 54.60, "200m Schmetterling": 125.70,
@@ -134,7 +138,6 @@ def scrape_event_for_year(event_url: str, target_year: int, pool_length: str) ->
     is_male = re.search(r'\b(männlich|men|herren|knaben|buben)\b', discipline_name.lower())
     gender = "m" if is_male else "w"
     
-    # NEU: Wir extrahieren den reinen Grundbewerb (z.B. "100m Freistil"), ohne Zusätze wie "Vorlauf"
     course_data = BASE_TIMES.get(pool_length, BASE_TIMES["LCM"]).get(gender, {})
     base_bewerb = discipline_name
     for key in sorted(course_data.keys(), key=len, reverse=True):
@@ -165,7 +168,7 @@ def scrape_event_for_year(event_url: str, target_year: int, pool_length: str) ->
                 "Jahrgang": target_year, 
                 "Geschlecht": gender,
                 "Bewerb": discipline_name, 
-                "Grundbewerb": base_bewerb,  # NEU: Wird für den Filter gespeichert
+                "Grundbewerb": base_bewerb,
                 "Zeit": time_str, 
                 "Punkte": points
             })
@@ -253,12 +256,9 @@ if st.button("🚀 Ergebnisse abrufen", type="primary", use_container_width=True
                 
                 # --- VORLAUF / FINALE BEREINIGUNG (Nur für 2012 & 2013) ---
                 if int(year_input) in [2012, 2013]:
-                    # Wir sortieren nach Punkten (höchste zuerst) und werfen dann alle 
-                    # schwächeren Starts derselben Strecke für diesen Schwimmer raus.
                     df_gender = df_gender.sort_values('Punkte', ascending=False)
                     df_gender = df_gender.drop_duplicates(subset=['Name', 'Grundbewerb'], keep='first')
                 
-                # Wir zählen jetzt die Grundbewerbe, um die echte Anzahl an Disziplinen zu erhalten
                 total_events = df_gender['Grundbewerb'].nunique()
                 
                 if int(year_input) in [2014, 2015]:
